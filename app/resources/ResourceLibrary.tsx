@@ -11,6 +11,7 @@ interface Props {
 export default function ResourceLibrary({ resources, categories, library }: Props) {
   const [query, setQuery] = useState('');
   const [activeCat, setActiveCat] = useState<string>('all');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -26,6 +27,46 @@ export default function ResourceLibrary({ resources, categories, library }: Prop
 
   const hasResources = (resources || []).length > 0;
 
+  /* ---------- DOWNLOAD HANDLER ---------- */
+  const handleDownload = async (r: any) => {
+    if (!r.fileUrl) return;
+    setDownloadingId(r.id);
+
+    // Build a nice filename: "PSEA Policy.pdf" (title + original extension)
+    const ext = (r.fileType || r.fileUrl.split('.').pop() || 'pdf').toLowerCase();
+    const safeTitle = (r.title || 'document')
+      .replace(/[^a-zA-Z0-9 _-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-');
+    const filename = `${safeTitle}.${ext}`;
+
+    try {
+      // Fetch the file (works cross-origin because Blob allows CORS)
+      const res = await fetch(r.fileUrl);
+      if (!res.ok) throw new Error('Download failed');
+
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+
+      // Create a hidden anchor and click it
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      // Clean up
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (err) {
+      console.error('Download failed:', err);
+      // Fallback: just open in a new tab
+      window.open(r.fileUrl, '_blank', 'noopener,noreferrer');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   return (
     <div className="rl-wrap">
       {/* SEARCH + FILTERS */}
@@ -39,7 +80,12 @@ export default function ResourceLibrary({ resources, categories, library }: Prop
             placeholder={library?.searchPlaceholder || 'Search resources...'}
           />
           {query && (
-            <button type="button" onClick={() => setQuery('')} className="rl-clear" aria-label="Clear search">
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              className="rl-clear"
+              aria-label="Clear search"
+            >
               <i className="fas fa-times" />
             </button>
           )}
@@ -93,6 +139,8 @@ export default function ResourceLibrary({ resources, categories, library }: Prop
           {filtered.map((r: any) => {
             const cat = categories.find((c: any) => c.id === r.category);
             const accent = cat?.accent || '#0D9488';
+            const isDownloading = downloadingId === r.id;
+
             return (
               <article key={r.id} className="rl-card">
                 <div className="rl-card-top">
@@ -131,6 +179,7 @@ export default function ResourceLibrary({ resources, categories, library }: Prop
                 <div className="rl-card-actions">
                   {r.fileUrl ? (
                     <>
+                      {/* VIEW — opens in new tab */}
                       <a
                         href={r.fileUrl}
                         target="_blank"
@@ -139,13 +188,24 @@ export default function ResourceLibrary({ resources, categories, library }: Prop
                       >
                         <i className="fas fa-eye" /> View
                       </a>
-                      <a
-                        href={r.fileUrl}
-                        download
+
+                      {/* DOWNLOAD — forces download via fetch + Blob */}
+                      <button
+                        type="button"
+                        onClick={() => handleDownload(r)}
+                        disabled={isDownloading}
                         className="rl-btn rl-btn-download"
                       >
-                        <i className="fas fa-download" /> Download
-                      </a>
+                        {isDownloading ? (
+                          <>
+                            <i className="fas fa-circle-notch fa-spin" /> Downloading…
+                          </>
+                        ) : (
+                          <>
+                            <i className="fas fa-download" /> Download
+                          </>
+                        )}
+                      </button>
                     </>
                   ) : (
                     <span className="rl-unavailable">Not yet available</span>
@@ -309,11 +369,11 @@ export default function ResourceLibrary({ resources, categories, library }: Prop
           text-decoration: none; cursor: pointer;
           transition: all .25s ease;
           border: 1.5px solid transparent;
+          background: transparent;
         }
         .rl-btn i { font-size: 11px; }
 
         .rl-btn-view {
-          background: transparent;
           color: var(--navy-900);
           border-color: #E5E7EB;
         }
@@ -326,10 +386,15 @@ export default function ResourceLibrary({ resources, categories, library }: Prop
           background: linear-gradient(135deg, #F5D67B, #D4A12A);
           color: #0A0F1F;
           box-shadow: 0 8px 18px rgba(212,161,42,0.25);
+          border: none;
         }
-        .rl-btn-download:hover {
+        .rl-btn-download:hover:not(:disabled) {
           transform: translateY(-1px);
           box-shadow: 0 12px 26px rgba(212,161,42,0.35);
+        }
+        .rl-btn-download:disabled {
+          opacity: 0.7;
+          cursor: wait;
         }
 
         .rl-unavailable {
