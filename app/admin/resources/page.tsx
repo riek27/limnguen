@@ -9,6 +9,11 @@ export default function AdminResourcesPage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [activeTab, setActiveTab] = useState('hero');
 
+  // Upload progress state (per-card)
+  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadingName, setUploadingName] = useState('');
+
   const imageInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
   const pendingImageRef = useRef<((url: string) => void) | null>(null);
@@ -131,8 +136,14 @@ export default function AdminResourcesPage() {
     imageInputRef.current?.click();
   };
 
-  const triggerDocUpload = (cb: (res: { url: string; fileType: string; fileSize: string }) => void) => {
+  // Now takes an index so we know which card is uploading
+  const triggerDocUpload = (
+    idx: number,
+    cb: (res: { url: string; fileType: string; fileSize: string }) => void
+  ) => {
     pendingDocRef.current = cb;
+    setUploadingIdx(idx);
+    setUploadProgress(0);
     docInputRef.current?.click();
   };
 
@@ -160,19 +171,28 @@ export default function AdminResourcesPage() {
 
   const onDocChosen = async () => {
     const file = docInputRef.current?.files?.[0];
-    if (!file || !pendingDocRef.current) return;
+    if (!file || !pendingDocRef.current) {
+      setUploadingIdx(null);
+      return;
+    }
+
+    setUploadProgress(0);
+    setUploadingName(file.name);
 
     try {
-      // Upload directly to Vercel Blob — bypasses Vercel's 4.5 MB serverless limit
       const { upload } = await import('@vercel/blob/client');
 
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const blob = await upload(`documents/${Date.now()}-${safeName}`, file, {
         access: 'public',
         handleUploadUrl: '/api/upload-document',
+        onUploadProgress: (p: any) => {
+          const pct =
+            p?.percentage ?? (p?.total ? (p.loaded / p.total) * 100 : 0);
+          setUploadProgress(Math.min(100, Math.round(pct)));
+        },
       });
 
-      // Compute size label
       const sizeKB = file.size / 1024;
       const sizeMB = sizeKB / 1024;
       const sizeLabel =
@@ -187,12 +207,19 @@ export default function AdminResourcesPage() {
         fileSize: sizeLabel,
       });
       setToast({ type: 'success', text: 'Document uploaded!' });
+      setUploadProgress(100);
     } catch (err: any) {
       console.error('Upload failed:', err);
       setToast({ type: 'error', text: err?.message || 'Upload failed' });
     } finally {
       if (docInputRef.current) docInputRef.current.value = '';
       pendingDocRef.current = null;
+      // Keep the 100% bar visible briefly, then hide
+      setTimeout(() => {
+        setUploadingIdx(null);
+        setUploadProgress(0);
+        setUploadingName('');
+      }, 700);
     }
   };
 
@@ -460,7 +487,7 @@ export default function AdminResourcesPage() {
             <label style={labelStyle}>Search Placeholder</label>
             <input value={data.library?.searchPlaceholder || ''} onChange={(e) => update('library', 'searchPlaceholder', e.target.value)} style={inputStyle} />
 
-            <label style={labelStyle}>"All" Filter Label</label>
+            <label style={labelStyle}>&ldquo;All&rdquo; Filter Label</label>
             <input value={data.library?.allLabel || ''} onChange={(e) => update('library', 'allLabel', e.target.value)} style={inputStyle} />
 
             <label style={labelStyle}>Empty State Title</label>
@@ -650,19 +677,22 @@ export default function AdminResourcesPage() {
                   <button
                     type="button"
                     onClick={() =>
-                      triggerDocUpload((res) => {
+                      triggerDocUpload(i, (res) => {
                         resChange(i, 'fileUrl', res.url);
                         resChange(i, 'fileType', res.fileType);
                         resChange(i, 'fileSize', res.fileSize);
                       })
                     }
                     style={tealBtn}
+                    disabled={uploadingIdx === i}
                   >
-                    <i className="fas fa-upload" style={{ marginRight: 6 }} /> Upload File
+                    <i className="fas fa-upload" style={{ marginRight: 6 }} />{' '}
+                    {uploadingIdx === i ? 'Uploading…' : 'Upload File'}
                   </button>
                 </div>
 
-                {r.fileUrl && (
+                {/* URL preview (hidden while uploading this card) */}
+                {r.fileUrl && uploadingIdx !== i && (
                   <div
                     style={{
                       display: 'flex',
@@ -687,6 +717,100 @@ export default function AdminResourcesPage() {
                     >
                       Preview ↗
                     </a>
+                  </div>
+                )}
+
+                {/* ⭐ UPLOAD PROGRESS BAR (only on the active card) */}
+                {uploadingIdx === i && (
+                  <div
+                    style={{
+                      marginTop: 4,
+                      marginBottom: 16,
+                      padding: '14px 16px',
+                      background: '#F0FDFA',
+                      border: '1.5px solid #99F6E4',
+                      borderRadius: 12,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: 10,
+                        gap: 12,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          minWidth: 0,
+                          flex: 1,
+                        }}
+                      >
+                        <i
+                          className="fas fa-file-arrow-up"
+                          style={{ color: '#0D9488', fontSize: 14 }}
+                        />
+                        <span
+                          style={{
+                            fontSize: '0.82rem',
+                            fontWeight: 600,
+                            color: '#0F766E',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          Uploading {uploadingName || 'file'}…
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: '0.85rem',
+                          fontWeight: 800,
+                          color: '#0D9488',
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        {uploadProgress}%
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        width: '100%',
+                        height: 8,
+                        background: '#CCFBF1',
+                        borderRadius: 999,
+                        overflow: 'hidden',
+                        position: 'relative',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${uploadProgress}%`,
+                          height: '100%',
+                          background:
+                            'linear-gradient(90deg, #14B8A6 0%, #0D9488 100%)',
+                          borderRadius: 999,
+                          transition: 'width 0.25s ease',
+                          position: 'relative',
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            background:
+                              'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%)',
+                            animation: 'uploadShimmer 1.4s linear infinite',
+                          }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -804,6 +928,14 @@ export default function AdminResourcesPage() {
           )}
         </button>
       </div>
+
+      {/* Shimmer animation for upload progress bar */}
+      <style>{`
+        @keyframes uploadShimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+      `}</style>
     </div>
   );
 }
