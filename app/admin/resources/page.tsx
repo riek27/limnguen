@@ -161,19 +161,35 @@ export default function AdminResourcesPage() {
   const onDocChosen = async () => {
     const file = docInputRef.current?.files?.[0];
     if (!file || !pendingDocRef.current) return;
-    const fd = new FormData();
-    fd.append('file', file);
+
     try {
-      const res = await fetch('/api/upload-document', { method: 'POST', body: fd });
-      const result = await res.json();
-      if (result.url) {
-        pendingDocRef.current(result);
-        setToast({ type: 'success', text: 'Document uploaded!' });
-      } else {
-        setToast({ type: 'error', text: result.error || 'Upload failed' });
-      }
-    } catch {
-      setToast({ type: 'error', text: 'Upload failed' });
+      // Upload directly to Vercel Blob — bypasses Vercel's 4.5 MB serverless limit
+      const { upload } = await import('@vercel/blob/client');
+
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const blob = await upload(`documents/${Date.now()}-${safeName}`, file, {
+        access: 'public',
+        handleUploadUrl: '/api/upload-document',
+      });
+
+      // Compute size label
+      const sizeKB = file.size / 1024;
+      const sizeMB = sizeKB / 1024;
+      const sizeLabel =
+        sizeMB >= 1
+          ? `${sizeMB.toFixed(1)} MB`
+          : `${Math.max(1, Math.round(sizeKB))} KB`;
+      const ext = (file.name.split('.').pop() || '').toUpperCase();
+
+      pendingDocRef.current({
+        url: blob.url,
+        fileType: ext,
+        fileSize: sizeLabel,
+      });
+      setToast({ type: 'success', text: 'Document uploaded!' });
+    } catch (err: any) {
+      console.error('Upload failed:', err);
+      setToast({ type: 'error', text: err?.message || 'Upload failed' });
     } finally {
       if (docInputRef.current) docInputRef.current.value = '';
       pendingDocRef.current = null;

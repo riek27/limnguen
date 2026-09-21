@@ -1,47 +1,45 @@
 import { NextResponse } from 'next/server';
-import { put } from '@vercel/blob';
+import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
 
 export const runtime = 'nodejs';
 
-export async function POST(request: Request) {
+export async function POST(request: Request): Promise<NextResponse> {
+  const body = (await request.json()) as HandleUploadBody;
+
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File | null;
-
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
-    }
-
-    // Compute a human-friendly size BEFORE upload
-    const sizeKB = file.size / 1024;
-    const sizeMB = sizeKB / 1024;
-    const sizeLabel =
-      sizeMB >= 1
-        ? `${sizeMB.toFixed(1)} MB`
-        : `${Math.max(1, Math.round(sizeKB))} KB`;
-
-    const ext = (file.name.split('.').pop() || '').toUpperCase();
-
-    // Vercel Blob requires a unique pathname — add a timestamp prefix
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const pathname = `documents/${Date.now()}-${safeName}`;
-
-    // Upload to Vercel Blob
-    const blob = await put(pathname, file, {
-      access: 'public',
-      addRandomSuffix: false,
+    const jsonResponse = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async (pathname) => {
+        // Optional: add auth check here
+        return {
+          allowedContentTypes: [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'text/plain',
+            'text/csv',
+            'application/zip',
+          ],
+          addRandomSuffix: false,
+          maximumSizeInBytes: 500 * 1024 * 1024, // 500 MB
+        };
+      },
+      onUploadCompleted: async () => {
+        // Optional: do something after upload completes
+      },
     });
 
-    return NextResponse.json({
-      url: blob.url,
-      fileType: ext,
-      fileSize: sizeLabel,
-    });
+    return NextResponse.json(jsonResponse);
   } catch (error: any) {
-    console.error('Document upload error:', error);
+    console.error('Upload token error:', error);
     return NextResponse.json(
       { error: error?.message || 'Upload failed' },
-      { status: 500 }
+      { status: 400 }
     );
   }
 }
