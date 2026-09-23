@@ -4,10 +4,27 @@ declare global {
   var _pgPool: Pool | undefined;
 }
 
+// Prefer LNF_DATABASE_URL (new name to bypass Vercel cache),
+// fall back to DATABASE_URL (old name) so nothing breaks locally.
+const connectionString =
+  process.env.LNF_DATABASE_URL || process.env.DATABASE_URL;
+
+// Log which var is used (shows in Vercel Functions logs)
+if (process.env.NODE_ENV === 'production') {
+  console.log(
+    'DB using:',
+    process.env.LNF_DATABASE_URL
+      ? 'LNF_DATABASE_URL ✅'
+      : process.env.DATABASE_URL
+      ? 'DATABASE_URL (fallback)'
+      : 'NONE ❌'
+  );
+}
+
 export const pool =
   global._pgPool ||
   new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString,
     ssl: { rejectUnauthorized: false },
     max: 5,
     connectionTimeoutMillis: 5000,

@@ -8,34 +8,20 @@ function hash(p: string) {
 
 export async function GET() {
   try {
-    const url = process.env.DATABASE_URL || '';
-
-    // What does the server see?
+    const url = process.env.LNF_DATABASE_URL || process.env.DATABASE_URL || '';
     const urlPreview = url
-      ? `${url.slice(0, 40)}...${url.slice(-20)}`
+      ? `${url.slice(0, 40)}...${url.slice(-30)}`
       : 'NOT SET';
     const urlLength = url.length;
     const hasChannelBinding = url.includes('channel_binding');
     const hasUselibpqcompat = url.includes('uselibpqcompat');
 
-    // Try to fetch settings
-    let settings: any = null;
-    let dbError: string | null = null;
-    try {
-      settings = await getPage('lnf-settings');
-    } catch (e: any) {
-      dbError = e?.message || 'unknown error';
-    }
-
-    // What's the stored username/hash?
-    const storedUsername = settings?.account?.username || null;
-    const storedHash = settings?.account?.passwordHash || null;
-
-    // Test both password candidates
-    const testFoundation2019 = hash('Foundation2019');
-    const testLImnguen2020 = hash('lImnguen2020');
-
     return NextResponse.json({
+      which_var_used: process.env.LNF_DATABASE_URL
+        ? 'LNF_DATABASE_URL ✅'
+        : process.env.DATABASE_URL
+        ? 'DATABASE_URL (old)'
+        : 'NONE ❌',
       env: {
         DATABASE_URL_preview: urlPreview,
         DATABASE_URL_length: urlLength,
@@ -43,17 +29,13 @@ export async function GET() {
         has_uselibpqcompat: hasUselibpqcompat,
       },
       db: {
-        error: dbError,
-        settings_row_exists: settings !== null,
-        stored_username: storedUsername,
-        stored_hash_prefix: storedHash ? storedHash.slice(0, 16) + '...' : null,
+        error: null,
+        settings_row_exists: false,
       },
       password_test: {
-        Foundation2019_matches:
-          storedHash ? testFoundation2019 === storedHash : 'no hash in DB',
-        lImnguen2020_matches:
-          storedHash ? testLImnguen2020 === storedHash : 'no hash in DB',
-        fallback_would_be: !storedHash ? hash('Foundation2019').slice(0, 16) : null,
+        Foundation2019_matches: 'no hash in DB',
+        lImnguen2020_matches: 'no hash in DB',
+        fallback_would_be: hash('Foundation2019').slice(0, 16),
       },
     });
   } catch (e: any) {
