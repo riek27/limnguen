@@ -10,8 +10,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const jsonResponse = await handleUpload({
       body,
       request,
-      onBeforeGenerateToken: async (pathname) => {
-        // Optional: add auth check here
+      onBeforeGenerateToken: async () => {
         return {
           allowedContentTypes: [
             'application/pdf',
@@ -24,14 +23,18 @@ export async function POST(request: Request): Promise<NextResponse> {
             'text/plain',
             'text/csv',
             'application/zip',
+            'image/jpeg',
+            'image/png',
+            'image/webp',
+            'image/gif',
+            'image/svg+xml',
           ],
-          addRandomSuffix: false,
-          maximumSizeInBytes: 500 * 1024 * 1024, // 500 MB
+          addRandomSuffix: true,        // ← KEY FIX: unique filename every upload
+          allowOverwrite: true,         // ← also allow overwriting if same name
+          maximumSizeInBytes: 500 * 1024 * 1024,
         };
       },
-      onUploadCompleted: async () => {
-        // Optional: do something after upload completes
-      },
+      onUploadCompleted: async () => {},
     });
 
     return NextResponse.json(jsonResponse);
